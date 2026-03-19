@@ -11,40 +11,43 @@ export class ApidogApiError extends Error {
 }
 
 export class ApidogClient {
-  private readonly headers: Record<string, string>;
+  private readonly accessToken: string;
   private readonly baseUrl: string;
   private readonly projectId: string;
   private readonly branchId?: string;
 
   constructor(config: Config) {
+    this.accessToken = config.accessToken;
     this.baseUrl = config.baseUrl;
     this.projectId = config.projectId;
     this.branchId = config.branchId;
-    this.headers = {
-      Authorization: `Bearer ${config.accessToken}`,
+  }
+
+  get project(): string {
+    return this.projectId;
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${this.accessToken}`,
+      'x-project-id': this.projectId,
+      ...(this.branchId ? { 'x-branch-id': this.branchId } : {}),
+      'x-client-mode': 'web',
+      'x-client-version': '2.8.9',
+      'x-device-id': '@ivanherula/apidog-mcp-server',
       'Content-Type': 'application/json',
+      Accept: 'application/json',
     };
   }
 
-  private buildUrl(path: string, queryParams?: Record<string, string | number | boolean | undefined>): string {
-    // Replace {projectId} placeholder
-    const resolvedPath = path.replace('{projectId}', this.projectId);
-    const url = new URL(`${this.baseUrl}${resolvedPath}`);
-
-    // Add branch_id if configured
-    if (this.branchId) {
-      url.searchParams.set('branch_id', this.branchId);
-    }
-
-    // Add additional query params
-    if (queryParams) {
-      for (const [key, value] of Object.entries(queryParams)) {
-        if (value !== undefined) {
-          url.searchParams.set(key, String(value));
-        }
+  private buildUrl(path: string, params?: Record<string, string>): string {
+    const url = new URL(`${this.baseUrl}${path}`);
+    url.searchParams.set('locale', 'en-US');
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        url.searchParams.set(key, value);
       }
     }
-
     return url.toString();
   }
 
@@ -52,26 +55,18 @@ export class ApidogClient {
     method: string,
     path: string,
     body?: unknown,
-    queryParams?: Record<string, string | number | boolean | undefined>
+    params?: Record<string, string>
   ): Promise<T> {
-    const url = this.buildUrl(path, queryParams);
+    const url = this.buildUrl(path, params);
     const response = await fetch(url, {
       method,
-      headers: this.headers,
+      headers: this.headers(),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
     if (!response.ok) {
-      let message = `HTTP ${response.status}`;
-      try {
-        const errorBody = await response.json();
-        if (typeof errorBody === 'object' && errorBody !== null && 'message' in errorBody) {
-          message = (errorBody as { message: string }).message;
-        }
-      } catch {
-        // use default message
-      }
-      throw new ApidogApiError(response.status, message);
+      const text = await response.text();
+      throw new ApidogApiError(response.status, `HTTP ${response.status}: ${text}`);
     }
 
     if (response.status === 204) {
@@ -80,27 +75,45 @@ export class ApidogClient {
 
     const json = (await response.json()) as ApiResponse<T>;
 
-    // Unwrap Apidog { success, data } wrapper
-    if (typeof json === 'object' && json !== null && 'success' in json && 'data' in json) {
-      return json.data;
+    if (json.success === false) {
+      throw new ApidogApiError(response.status, JSON.stringify(json));
     }
 
-    return json as unknown as T;
+    return (json.data !== undefined ? json.data : json) as unknown as T;
   }
 
-  get<T>(path: string, queryParams?: Record<string, string | number | boolean | undefined>): Promise<T> {
-    return this.request<T>('GET', path, undefined, queryParams);
+  get<T>(path: string, params?: Record<string, string>): Promise<T> {
+    return this.request<T>('GET', path, undefined, params);
   }
 
-  post<T>(path: string, body?: unknown, queryParams?: Record<string, string | number | boolean | undefined>): Promise<T> {
-    return this.request<T>('POST', path, body, queryParams);
+  post<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>('POST', path, body);
   }
 
-  put<T>(path: string, body?: unknown, queryParams?: Record<string, string | number | boolean | undefined>): Promise<T> {
-    return this.request<T>('PUT', path, body, queryParams);
+  put<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>('PUT', path, body);
   }
 
-  delete<T>(path: string, queryParams?: Record<string, string | number | boolean | undefined>): Promise<T> {
-    return this.request<T>('DELETE', path, undefined, queryParams);
+  delete<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>('DELETE', path, body);
+  }
+
+  async postForm<T>(path: string, formData: Record<string, string>): Promise<T> {
+    const hdrs = this.headers();
+    hdrs['Content-Type'] = 'application/x-www-form-urlencoded';
+    const body = new URLSearchParams(formData).toString();
+    const url = this.buildUrl(path);
+    const response = await fetch(url, { method: 'POST', headers: hdrs, body });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new ApidogApiError(response.status, `HTTP ${response.status}: ${text}`);
+    }
+
+    const json = (await response.json()) as ApiResponse<T>;
+    if (json.success === false) {
+      throw new ApidogApiError(response.status, JSON.stringify(json));
+    }
+    return (json.data !== undefined ? json.data : json) as unknown as T;
   }
 }

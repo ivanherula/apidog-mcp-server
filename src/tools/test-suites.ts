@@ -4,25 +4,14 @@ import type { ApidogClient } from '../client.js';
 import * as api from '../api/test-suites.js';
 import { toolResult, toolError } from '../server.js';
 
-const suiteItemSchema = z.object({
-  type: z.string().describe('Item type (e.g. "testCase", "testScenario")'),
-  id: z.number().describe('Item ID'),
-  name: z.string().optional().describe('Item name'),
-});
-
 export function registerTestSuiteTools(server: McpServer, client: ApidogClient): void {
   server.tool(
     'list_test_suites',
-    'List test suites with optional filters',
-    {
-      folderId: z.number().optional().describe('Filter by folder ID'),
-      keyword: z.string().optional().describe('Search keyword'),
-      page: z.number().optional().describe('Page number (1-based)'),
-      pageSize: z.number().optional().describe('Items per page'),
-    },
-    async (args) => {
+    'List all test suites (compact summary: id, name, folderId, priority, tags, description, ordering, status)',
+    {},
+    async () => {
       try {
-        const data = await api.listTestSuites(client, args);
+        const data = await api.listTestSuites(client);
         return toolResult(data);
       } catch (err) {
         return toolError(err);
@@ -48,16 +37,32 @@ export function registerTestSuiteTools(server: McpServer, client: ApidogClient):
 
   server.tool(
     'create_test_suite',
-    'Create a new test suite',
+    'Create a new test suite for CI grouping',
     {
       name: z.string().describe('Suite name'),
-      folderId: z.number().optional().describe('Folder ID'),
-      description: z.string().optional().describe('Description'),
-      items: z.array(suiteItemSchema).optional().describe('Initial suite items'),
+      folderId: z.coerce.number().default(0).describe('Folder ID (0 for root)'),
+      description: z.string().default('').describe('Description'),
+      priority: z.coerce.number().default(2).describe('Priority (1=high, 2=medium, 3=low)'),
+      tags: z.array(z.string()).default([]).describe('Tag names'),
+      ordering: z.coerce.number().default(0).describe('Sort order'),
+      environmentId: z.coerce.number().optional().describe('Default environment ID'),
+      runnerId: z.coerce.number().default(0).describe('Default runner ID'),
     },
-    async (args) => {
+    async ({ name, folderId, description, priority, tags, ordering, environmentId, runnerId }) => {
       try {
-        const data = await api.createTestSuite(client, args);
+        const body: Record<string, unknown> = {
+          folderId,
+          name,
+          priority,
+          tags,
+          ordering,
+          description,
+          options: {
+            runnerId,
+            ...(environmentId !== undefined ? { environmentId } : {}),
+          },
+        };
+        const data = await api.createTestSuite(client, body);
         return toolResult(data);
       } catch (err) {
         return toolError(err);
@@ -67,16 +72,21 @@ export function registerTestSuiteTools(server: McpServer, client: ApidogClient):
 
   server.tool(
     'update_test_suite',
-    'Update a test suite (merge update)',
+    'Update a test suite (merge update — fetches current state first)',
     {
       suiteId: z.number().describe('Test suite ID to update'),
       name: z.string().optional().describe('New name'),
       description: z.string().optional().describe('New description'),
-      items: z.array(suiteItemSchema).optional().describe('New suite items'),
+      items: z.array(z.record(z.unknown())).optional().describe('New suite items'),
     },
     async (args) => {
       try {
-        const { suiteId, ...body } = args;
+        const { suiteId, ...fields } = args;
+        const current = await api.getTestSuite(client, suiteId) as Record<string, unknown>;
+        const body: Record<string, unknown> = { ...current };
+        for (const [k, v] of Object.entries(fields)) {
+          if (v !== undefined) body[k] = v;
+        }
         const data = await api.updateTestSuite(client, suiteId, body);
         return toolResult(data);
       } catch (err) {
@@ -106,7 +116,8 @@ export function registerTestSuiteTools(server: McpServer, client: ApidogClient):
     'Create a folder for organizing test suites',
     {
       name: z.string().describe('Folder name'),
-      parentId: z.number().optional().describe('Parent folder ID'),
+      parentId: z.coerce.number().default(0).describe('Parent folder ID (0 for root)'),
+      ordering: z.coerce.number().default(0).describe('Sort order'),
     },
     async (args) => {
       try {
