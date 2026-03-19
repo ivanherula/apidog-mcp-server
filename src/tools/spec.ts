@@ -7,7 +7,7 @@ import { toolResult, toolError } from '../server.js';
 export function registerSpecTools(server: McpServer, client: ApidogClient): void {
   server.tool(
     'list_environments',
-    'List all environments in the project',
+    'List all environments (DEV, TEST, PROD, etc.) with their base URLs',
     {},
     async () => {
       try {
@@ -21,16 +21,22 @@ export function registerSpecTools(server: McpServer, client: ApidogClient): void
 
   server.tool(
     'list_endpoints',
-    'List or search API endpoints in the project',
+    'List API endpoints tree with IDs, names, and folder structure. Use moduleId to filter by service module. Use search to filter by name.',
     {
-      keyword: z.string().optional().describe('Search keyword to filter endpoints'),
-      folderId: z.number().optional().describe('Filter by folder ID'),
-      page: z.number().optional().describe('Page number (1-based)'),
-      pageSize: z.number().optional().describe('Items per page'),
+      moduleId: z.coerce.number().optional().describe('Filter by module ID to reduce response size'),
+      search: z.string().optional().describe('Filter endpoints by name (case-insensitive)'),
     },
-    async (args) => {
+    async ({ moduleId, search }) => {
       try {
-        const data = await api.listEndpoints(client, args);
+        let data = await api.listApiEndpoints(client) as Array<Record<string, unknown>>;
+
+        if (moduleId !== undefined) {
+          data = filterByModule(data, moduleId);
+        }
+        if (search) {
+          data = filterByName(data, search);
+        }
+
         return toolResult(data);
       } catch (err) {
         return toolError(err);
@@ -40,7 +46,7 @@ export function registerSpecTools(server: McpServer, client: ApidogClient): void
 
   server.tool(
     'get_endpoint_statistics',
-    'Get test coverage statistics for all endpoints',
+    'Get endpoint test coverage statistics',
     {},
     async () => {
       try {
@@ -79,5 +85,38 @@ export function registerSpecTools(server: McpServer, client: ApidogClient): void
       }
     }
   );
+}
 
+interface TreeNode {
+  name?: string;
+  moduleId?: number;
+  children?: TreeNode[];
+  [key: string]: unknown;
+}
+
+function filterByModule(items: TreeNode[], moduleId: number): TreeNode[] {
+  return items
+    .map((item) => {
+      if (item.children?.length) {
+        const filtered = filterByModule(item.children, moduleId);
+        if (filtered.length > 0) return { ...item, children: filtered };
+      }
+      if (item.moduleId === moduleId) return item;
+      return null;
+    })
+    .filter((item): item is TreeNode => item !== null);
+}
+
+function filterByName(items: TreeNode[], search: string): TreeNode[] {
+  const lower = search.toLowerCase();
+  return items
+    .map((item) => {
+      if (item.children?.length) {
+        const filtered = filterByName(item.children, search);
+        if (filtered.length > 0) return { ...item, children: filtered };
+      }
+      if ((item.name ?? '').toLowerCase().includes(lower)) return item;
+      return null;
+    })
+    .filter((item): item is TreeNode => item !== null);
 }

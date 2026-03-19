@@ -1,33 +1,33 @@
 import type { ApidogClient } from '../client.js';
-import type { TestSuite, CreateTestSuiteBody, UpdateTestSuiteBody, SuiteFolder, CreateSuiteFolderBody } from '../types.js';
 
-export function listTestSuites(
-  client: ApidogClient,
-  params?: { folderId?: number; keyword?: string; page?: number; pageSize?: number }
-): Promise<TestSuite[]> {
-  return client.get<TestSuite[]>('/projects/{projectId}/test-suites', params);
+export function listTestSuites(client: ApidogClient): Promise<unknown> {
+  return client.get<unknown>(`/projects/${client.project}/api-test/test-suite-tree-list`);
 }
 
-export function getTestSuite(client: ApidogClient, suiteId: number): Promise<TestSuite> {
-  return client.get<TestSuite>(`/projects/{projectId}/test-suites/${suiteId}`);
+export function getTestSuite(client: ApidogClient, suiteId: number): Promise<unknown> {
+  return client.get<unknown>(`/projects/${client.project}/api-test/test-suites/${suiteId}`);
 }
 
-export function createTestSuite(client: ApidogClient, body: CreateTestSuiteBody): Promise<TestSuite> {
-  return client.post<TestSuite>('/projects/{projectId}/test-suites', body);
+export function createTestSuite(client: ApidogClient, body: unknown): Promise<unknown> {
+  return client.post<unknown>(`/projects/${client.project}/api-test/test-suites`, body);
 }
 
-export function updateTestSuite(client: ApidogClient, suiteId: number, body: UpdateTestSuiteBody): Promise<TestSuite> {
-  return client.put<TestSuite>(`/projects/{projectId}/test-suites/${suiteId}`, body);
+export function updateTestSuite(client: ApidogClient, suiteId: number, body: unknown): Promise<unknown> {
+  return client.put<unknown>(`/projects/${client.project}/api-test/test-suites/${suiteId}`, body);
 }
 
-export function deleteTestSuite(client: ApidogClient, suiteId: number): Promise<void> {
-  return client.delete<void>(`/projects/{projectId}/test-suites/${suiteId}`);
+export function deleteTestSuite(client: ApidogClient, suiteId: number): Promise<unknown> {
+  return client.delete<unknown>(`/projects/${client.project}/api-test/test-suites/${suiteId}`, { id: suiteId });
 }
 
-export function createSuiteFolder(client: ApidogClient, body: CreateSuiteFolderBody): Promise<SuiteFolder> {
-  return client.post<SuiteFolder>('/projects/{projectId}/test-suite-folders', body);
+export function createSuiteFolder(client: ApidogClient, body: { name: string; parentId?: number; ordering?: number }): Promise<unknown> {
+  return client.post<unknown>(`/projects/${client.project}/api-test/test-suite-folders`, {
+    parentId: body.parentId ?? 0,
+    name: body.name,
+    ordering: body.ordering ?? 0,
+  });
 }
 
-export function deleteSuiteFolder(client: ApidogClient, folderId: number): Promise<void> {
-  return client.delete<void>(`/projects/{projectId}/test-suite-folders/${folderId}`);
+export function deleteSuiteFolder(client: ApidogClient, folderId: number): Promise<unknown> {
+  return client.delete<unknown>(`/projects/${client.project}/api-test/test-suite-folders/${folderId}`);
 }
