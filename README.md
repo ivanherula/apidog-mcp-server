@@ -9,7 +9,10 @@ MCP server for Apidog — read API specs and manage test cases, scenarios, suite
   "mcpServers": {
     "apidog": {
       "command": "npx",
-      "args": ["-y", "@ivanherula/apidog-mcp-server"],
+      "args": [
+        "-y",
+        "@ivanherula/apidog-mcp-server@latest"
+      ],
       "env": {
         "APIDOG_ACCESS_TOKEN": "your-token",
         "APIDOG_PROJECT_ID": "your-project-id"
